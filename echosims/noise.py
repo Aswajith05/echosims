@@ -1,42 +1,58 @@
-import sys
-import os
-from pathlib import Path
 import numpy as np
 import healpy as hp
-
-repo_root = str(Path(__file__).resolve().parent.parent)
-if repo_root not in sys.path:
-    sys.path.insert(0, repo_root)
-
 from echosims.utils import EchoInstrument
 
 class Noise(EchoInstrument):
+    """
+    Generate T, Q, U white-noise maps for a given instrumental band.
+    """
 
-    def __init__(self):
+    def __init__(self, nside, seed = 33333):
         super().__init__()
-        self.EchoInstrument = EchoInstrument
-        pass
 
-    def TQU(self, band, nside):
+        self.nside = nside
+        self.lmax = 3 * nside - 1
+        self.SEED = seed
 
-        npix = hp.nside2npix(nside)
-        pix_area = hp.nside2pixarea(nside, degrees = True) # Unit - Degrees^2
-        pix_len = np.sqrt(pix_area) # Unit - Degrees
 
-        # Temperature Noise Map
-        sigma_T = self.get_temperature_sensitivity(band)/60 # Unit conversion from muKarmin to muKdegree
-        std_dev_T = sigma_T/pix_len
-        T_noise = np.random.normal(0, std_dev_T, npix)
+    def TQU(self, band, idx):
+        """
+        Generate one TQU noise realization for the given band.
 
-        # Q Noise Map
-        sigma_Q = self.get_polarization_sensitivity(band)/60 # Unit conversion from muKarmin to muKdegree
-        std_dev_Q = sigma_Q/pix_len
-        Q_noise = np.random.normal(0, std_dev_Q, npix)
+        Parameters
+        ----------
+        band : int
+            Frequency band label used by EchoInstrument.
 
-        # U Noise Map
-        sigma_U = self.get_polarization_sensitivity(band)/60 # Unit conversion from muKarmin to muKdegree
-        std_dev_U = sigma_U/pix_len
-        U_noise = np.random.normal(0, std_dev_U, npix)
+        idx : int
+            Iteration index.
 
-        return (T_noise, Q_noise, U_noise)
+        Returns
+        -------
+        TQU_maps : numpy.ndarray
+            Array of shape (3, npix), ordered as T, Q, U.
+        """
+
+        # Generating Noise Spectra
+        sigma_T = self.get_temperature_sensitivity(band) # Unit - muK.arcmin
+        sigma_P = self.get_polarization_sensitivity(band) # Unit - muK.arcmin
         
+        # Convert muK-arcmin sensitivity to white-noise power spectrum.
+        # The resulting n_l has units of muK^2 sr.
+        nl_TT = np.full(self.lmax + 1, (np.radians(sigma_T/60))**2) 
+        nl_PP = np.full(self.lmax + 1, (np.radians(sigma_P/60))**2) # This serves as both EE and BB Spectra 
+
+        nl_TE = np.zeros(self.lmax + 1)
+
+        np.random.seed(self.SEED + idx)
+        
+        TQU_maps = hp.synfast(
+            [nl_TT, nl_PP, nl_PP, nl_TE], 
+            nside = self.nside,
+            lmax = self.lmax,
+            pol = True,
+            new = True,
+            verbose = False
+        )
+
+        return TQU_maps
