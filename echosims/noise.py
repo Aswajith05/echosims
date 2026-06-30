@@ -9,6 +9,7 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 from echosims.utils import EchoInstrument
+class Noise(EchoInstrument):
     """
     Generate T, Q, U white-noise maps for a given instrumental band.
     """
